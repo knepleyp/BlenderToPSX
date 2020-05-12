@@ -18,8 +18,15 @@ from bpy.props import (CollectionProperty,
                        FloatProperty,
                        )
                        
-from bpy_extras.io_utils import ExportHelper
+from bpy_extras.io_utils import (
+        ExportHelper,
+        orientation_helper,
+        axis_conversion,
+        )
 
+from mathutils import Matrix
+
+@orientation_helper(axis_forward='Z', axis_up='-Y')
 class ExportPSX(bpy.types.Operator, ExportHelper):
     bl_idname       = "export_psx.c";
     bl_label        = "PSX compatible format exporter";
@@ -50,9 +57,15 @@ class ExportPSX(bpy.types.Operator, ExportHelper):
         f.write("// PSX MESH exported from blender using psxexport.py\n")
         
         for m in bpy.data.meshes:
+            
+            global_matrix = (axis_conversion(to_forward=self.axis_forward,
+                            to_up=self.axis_up,
+                            ).to_4x4())
+            #m.transform(global_matrix)
+            
             f.write("SVECTOR "+"model"+m.name+"_mesh[] = {\n")
             for i in range(len(m.vertices)):
-                v = m.vertices[i].co
+                v = global_matrix @ m.vertices[i].co
                 f.write("\t{"+str(int(round(v.x*self.properties.exp_Scale)))+","+str(int(round(v.y*self.properties.exp_Scale)))+","+str(int(round(v.z*self.properties.exp_Scale)))+"}")
                 if i != len(m.vertices) - 1:
                     f.write(",")
@@ -62,7 +75,7 @@ class ExportPSX(bpy.types.Operator, ExportHelper):
             if (self.properties.exp_perVertexNormals):
                 f.write("SVECTOR "+"model"+m.name+"_vertNormal[] = {\n")
                 for i in range(len(m.vertices)):
-                    normal = m.vertices[i].normal
+                    normal = global_matrix @ m.vertices[i].normal
                     # Playstation uses 4096, and we're flipping the triangle winding below so negate it as well
                     f.write("\t"+str(int(round(normal.x * -4096)))+","+str(int(round(normal.y * -4096)))+","+str(int(round(normal.z * -4096)))+",0")
                     if i != len(m.vertices) - 1:
@@ -73,8 +86,9 @@ class ExportPSX(bpy.types.Operator, ExportHelper):
                 f.write("SVECTOR "+"model"+m.name+"_normal[] = {\n")
                 for i in range(len(m.polygons)):
                     poly = m.polygons[i]
+                    normal = global_matrix @ poly.normal
                     # Playstation uses 4096, and we're flipping the triangle winding below so negate it as well
-                    f.write("\t"+str(int(round(poly.normal.x * -4096)))+","+str(int(round(poly.normal.y * -4096)))+","+str(int(round(poly.normal.z * -4096)))+",0")
+                    f.write("\t"+str(int(round(normal.x * -4096)))+","+str(int(round(normal.y * -4096)))+","+str(int(round(normal.z * -4096)))+",0")
                     if i != len(m.polygons) - 1:
                         f.write(",")
                     f.write("\n")
@@ -85,10 +99,13 @@ class ExportPSX(bpy.types.Operator, ExportHelper):
                 m.vertex_colors.new()
 
             f.write("CVECTOR "+"model"+m.name+"_color[] = {\n")
-            for i in range(len(m.vertices)):
+            for i in range(len(m.polygons)):
                 colors = m.vertex_colors["Col"].data
-                f.write("\t"+str(int(colors[i].color[0]*255))+","+str(int(colors[i].color[1]*255))+","+str(int(colors[i].color[2]*255))+", 0")
-                if i != len(m.vertices) - 1:
+                color1 = colors[i*3 + 0].color
+                color2 = colors[i*3 + 2].color
+                color3 = colors[i*3 + 1].color
+                f.write("\t"+str(int(color1[0]*255))+","+str(int(color1[1]*255))+","+str(int(color1[2]*255))+", 0")
+                if i != len(m.polygons) - 1:
                     f.write(",")
                 f.write("\n")
             f.write("};\n\n")
